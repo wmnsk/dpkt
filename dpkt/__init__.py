@@ -39,7 +39,10 @@ from . import ip6
 from . import ipx
 from . import llc
 from . import loopback
+from . import m2pa
+from . import m3ua
 from . import mrt
+from . import mtp3
 from . import netbios
 from . import netflow
 from . import ntp
