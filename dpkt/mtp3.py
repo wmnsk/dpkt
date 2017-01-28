@@ -13,12 +13,12 @@ from .compat import compat_ord
 # Message Transfer Part Level 3 defined in Q.704
 
 
-# Network Indicators
+# MTP3 Network Indicators
 NI_INTERNATINAL = 0
 NI_NATIONAL = 2
 NI_RSV_NATIONAL = 3
 
-# Service Indicators
+# MTP3 Service Indicators
 SI_MGMT = 0
 SI_MAINT = 1
 SI_SCCP = 3
@@ -135,7 +135,7 @@ def test_pack():
 
 
 def test_unpack():
-    """Packing test.
+    """Unpacking test.
     Create MTP3 instance by loading the bytearray above and
     check if the values are expectedly decoded.
     """

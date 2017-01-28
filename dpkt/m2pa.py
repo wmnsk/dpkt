@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Signaling System 7 (SS7) Message Transfer Part 2 (MTP2)"""
+"""MTP2-User Peer-to-Peer Adaptation Layer."""
 
 from __future__ import print_function
 from __future__ import absolute_import
@@ -10,8 +10,14 @@ from . import dpkt
 from .compat import compat_ord
 
 
-# MTP2-User Peer-to-Peer Adaptation Layer (M2PA) - rfc4165
+# Signaling System 7 (SS7) Message Transfer Part 2 (MTP2)
+# User Peer-to-Peer Adaptation Layer (M2PA) - RFC4165
 # https://tools.ietf.org/html/rfc4165
+
+
+# M2PA Message Types
+TYPE_USER_DATA = 1
+TYPE_LINK_STATUS = 2
 
 
 class M2PA(dpkt.Packet):
@@ -30,7 +36,7 @@ class M2PA(dpkt.Packet):
         ('ver', 'B', 1),
         ('spare', 'B', 0),
         ('cls', 'B', 11),
-        ('type', 'B', 1),
+        ('type', 'B', TYPE_USER_DATA),
         ('len', 'I', 0)
     )
 
@@ -101,23 +107,19 @@ __with_ttc = b'\x01\x00\x0b\x01\x00\x00\x00\x11\x00\x00\x00\x07\x00\x00\x00\x08\
 
 def test_pack():
     """Packing test.
-    1. Check if M2PA Common Header with no additional data created manually
-       has the expected values and is the same as bytearray(__common).
-    2. Check if M2PA Header created manually has the expected values.
-    3. Put M2PA Header on M2PA Common Header as .data, and check if the
-       whole payload is the same as bytearray(__with_itu)
-    4. Add priority field which only exists in TTC-formatted M2PA Header,
-       and check if the whole payload is the same as bytearray(__with_ttc).
+    Create M2PA/M2PAHeader instance by inserting values to the fields
+    manually, then check if the values are expectedly set and the
+    payload as a whole is the same as the bytearray above.
     """
 
-    m = M2PA(ver=1, spare=0, cls=11, type=1)
+    m = M2PA(ver=1, spare=0, cls=11, type=TYPE_USER_DATA)
     assert (bytes(m) == __common)
 
     h = M2PAHeader(u1=0, bsn=7, u2=0, fsn=8)
     m.data = bytes(h)
     assert (bytes(m) == __with_itu)
 
-    m2 = M2PA(ver=1, spare=0, cls=11, type=1)
+    m2 = M2PA(ver=1, spare=0, cls=11, type=TYPE_USER_DATA)
     h2 = M2PAHeader(u1=0, bsn=7, u2=0, fsn=8)
     h2.priority = 254
     m2.data = bytes(h2)
@@ -125,6 +127,11 @@ def test_pack():
 
 
 def test_unpack():
+    """Unpacking test.
+    Create MTP3 instance by loading the bytearray above and
+    check if the values are expectedly decoded.
+    """
+
     m = M2PA(__with_ttc)
     assert (m.ver == 1)
     assert (m.spare == 0)
