@@ -12,6 +12,7 @@ from .compat import compat_ord
 from binascii import hexlify as hx
 
 
+# SCCP Message Types
 TYPE_CR = 1
 TYPE_CC = 2
 TYPE_CREF = 3 
@@ -33,6 +34,40 @@ TYPE_XUDTS = 18
 TYPE_LUDT = 19
 TYPE_LUDTS = 20
 
+# Message Handlings
+MH_NO_SPECIAL_OPTIONS = 0
+MH_RETURN_MSG_ON_ERROR = 8
+
+# Subsystem Numbers
+SSN_UNKNOWN = 0
+SSN_SCCP_MGMT = 1
+SSN_ISUP = 3
+SSN_OMAP = 4
+SSN_MAP = 5
+SSN_HLR = 6
+SSN_VLR = 7
+SSN_MSC = 8
+SSN_EIR = 9
+SSN_AUC = 10
+SSN_ISDN_SS = 11
+SSN_BISDNE2EAPP = 13
+SSN_TCTR = 14
+SSN_RANAP = 142
+SSN_RNSAP = 143
+SSN_GMLC = 145
+SSN_CAP = 146
+SSN_GSM_SCF = 147
+SSN_SIWF = 148
+SSN_SGSN = 149
+SSN_GGSN = 150
+SSN_PCAP = 249
+SSN_BSC_BSSAP = 250
+SSN_MSC_BSSAP = 251
+SSN_SMLC_BSSAP = 252
+SSN_BSSOM = 253
+SSN_BSSAP = 254
+
+
 # Global Title Indicators
 NO_GT = 0
 NAI_ONLY = 1
@@ -41,17 +76,33 @@ TT_NPI_ES = 3
 TT_NPI_ES_NAI = 4
 
 # NPI
-NPI_ = 0
+NPI_UNKNOWN = 0
+NPI_ISDN_TELEPHONY = 1
+NPI_GENERIC = 2
+NPI_DATA = 3
+NPI_TELEX = 4
+NPI_MARITIME_MOBILE = 5
+NPI_LAND_MOBILE = 6
+NPI_ISDN_MOBILE = 7
+NPI_PRIVATE = 14
 
 # ES
-ES_ = 0
+ES_UNKNOWN = 0
+ES_BCD_ODD = 1
+ES_BCD_EVEN = 2
+ES_NATIONAL_SPARE = 3
 
 # NAI
-NAI_ = 0
+NAI_UNKNOWN = 0
+NAI_SUBSCRIBER_NUMBER = 1
+NAI_RSV_NATIONAL = 2
+NAI_NATIONAL_SIGNIFICANT = 3
+NAI_INTERNATIONAL_NUMBER = 4
 
 
 class SCCP(dpkt.Packet):
     """Generic SCCP Header.
+    TODO: more docstring
 
     Attributes:
         __hdr__: Generic Header fields of SCCP.
@@ -86,10 +137,6 @@ class SCCP(dpkt.Packet):
         self.flags = compat_ord(self.flags[0])
         self.data = self.data[:self.len - self.__hdr_len__]
 
-        # param = SCCP_TYPES_DICT.get(self.type, SCCPInvalidType)(self.data)
-        #     l.append(param)
-        #     self.data = self.data[len(param):]
-
         self.types = SCCP_TYPES_DICT.get(self.type, SCCPInvalidType)(self.data)
 
     def pack_hdr(self):
@@ -101,8 +148,8 @@ class SCCP(dpkt.Packet):
 
 class SCCPInvalidType(object):
     """SCCP Message Type Invalid or Unknown.
-    This class is used when the 'type' in SCCP class is
-    not in the range 1-19.
+    TODO: more docstring
+    
     """
     pass
 
@@ -135,12 +182,10 @@ class TypeUnitData(dpkt.Packet):
         print('p3: %s' % self.p3)
         print('data: %s' % hx(self.data))
 
-        # self.data = b''.join(self.data)
         self.cgpa = ParamPartyAddress(self.data[:self.p2 - self.p1 + 1])
         self.cdpa = ParamPartyAddress(self.data[self.p2 - self.p1 + 1:self.p3 - self.p1 + 2])
         self.upper_layers = self.data[self.p3 - 1:]
         self.data = [self.cgpa, self.cdpa, self.upper_layers]
-
 
         print('\n==================== CgPA ====================')
         print('cgpalen: %s' % self.cgpa.len)
@@ -157,7 +202,6 @@ class TypeUnitData(dpkt.Packet):
 
         print('\n\ndata: %s' % self.data)
 
-
     def pack_hdr(self):
         self.data = [bytes(d) for d in self.data]
         self.p3 = sum(map(len, self.data[:2])) + 1
@@ -165,8 +209,6 @@ class TypeUnitData(dpkt.Packet):
         self.p1 = 3
         print('pointers: %s %s %s' % (self.p1, self.p2, self.p3))
         print('data: %s' % self.data)
-        # self.data = b''.join(bytes(self.data))
-        # self.len = self.__hdr_len__ + len(self.data)
 
         return dpkt.Packet.pack_hdr(self)
 
@@ -179,7 +221,8 @@ class TypeUnitData(dpkt.Packet):
 
 class ParamPartyAddress(dpkt.Packet):
     """SCCP Mandatory Variable Parameter.
-
+    TODO: more docstring
+    
     Attributes:
         __hdr__: 
     """
@@ -228,12 +271,10 @@ class ParamPartyAddress(dpkt.Packet):
     def rsv_bit(self, p):
         pass
 
-
     def unpack(self, buf):
         dpkt.Packet.unpack(self, buf)
 
         self.indicators = compat_ord(self.indicators[0])
-
         if self.pc_indicator:
             self.pc = self.data[:2]
             self.data = self.data[2:]
@@ -259,13 +300,15 @@ class ParamPartyAddress(dpkt.Packet):
         self.indicators = struct.pack('B', (self.indicators) & 0xff)
         self.len = self.__hdr_len__ + len(bytes(self.data)) - 1
 
-
         return dpkt.Packet.pack_hdr(self)
 
 
 class GlobalTitle(dpkt.Packet):
     """Global Title(GT)
     TODO: more docstring
+
+    Attributes:
+        __hdr__: 
     """
     __hdr__ = (
         ('tt', 'B', 0),
@@ -359,7 +402,8 @@ __payloads = [
 __sccp = b''.join(__payloads)
 
 
-def test_SCCP_base_unpack():
+def test_unpack():
+    print('================ UNPACKING ================')
     s = SCCP(__sccp)
 
     assert s.type == TYPE_UDT
@@ -386,19 +430,19 @@ def test_SCCP_base_unpack():
     # assert (__sccp == 'hoge')
 
 
-def test_SCCP_base_pack():
+def test_pack():
     print('================ PACKING ================')
 
     s = SCCP(
         type=TYPE_UDT,
-        msg_handling=8,
+        msg_handling=MH_RETURN_MSG_ON_ERROR,
         cls=0
         )
 
     params = [
         ParamPartyAddress(
             indicators=18,
-            ssn=6,
+            ssn=SSN_HLR,
             gt=GlobalTitle(
                 flags=4356,
                 digits='987654321'
@@ -406,7 +450,7 @@ def test_SCCP_base_pack():
         ),
         ParamPartyAddress(
             indicators=18,
-            ssn=8,
+            ssn=SSN_MSC,
             gt=GlobalTitle(
                 flags=4356,
                 digits='123456789'
@@ -423,7 +467,12 @@ def test_SCCP_base_pack():
         routing_indicator=0,
         rsv_bit=0,
         ssn=6,
-        gt=GlobalTitle(flags=4356, data='\x89gE#\x01')
+        gt=GlobalTitle(
+            npi=NPI_ISDN_TELEPHONY,
+            es=ES_BCD_ODD,
+            nai=NAI_INTERNATIONAL_NUMBER,
+            digits='987654321'
+            )
         )
 
     cdpa = ParamPartyAddress(
@@ -433,7 +482,12 @@ def test_SCCP_base_pack():
         routing_indicator=0,
         rsv_bit=0,
         ssn=8,
-        gt=GlobalTitle(flags=4356, data='!Ce\x87\t')
+        gt=GlobalTitle(
+            npi=NPI_ISDN_TELEPHONY,
+            es=ES_BCD_ODD,
+            nai=NAI_INTERNATIONAL_NUMBER,
+            digits='123456789'
+            )
         )
     '''
 
