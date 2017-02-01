@@ -9,6 +9,7 @@ import struct
 from . import dpkt
 from .compat import compat_ord
 
+# for debugging
 from binascii import hexlify as hx
 
 
@@ -69,11 +70,11 @@ SSN_BSSAP = 254
 
 
 # Global Title Indicators
-NO_GT = 0
-NAI_ONLY = 1
-TT_ONLY = 2
-TT_NPI_ES = 3
-TT_NPI_ES_NAI = 4
+GTI_NO_GT = 0
+GTI_NAI_ONLY = 1
+GTI_TT_ONLY = 2
+GTI_TT_NPI_ES = 3
+GTI_TT_NPI_ES_NAI = 4
 
 # NPI
 NPI_UNKNOWN = 0
@@ -177,38 +178,17 @@ class TypeUnitData(dpkt.Packet):
 
     def unpack(self, buf):
         dpkt.Packet.unpack(self, buf)
-        print('p1: %s' % self.p1)
-        print('p2: %s' % self.p2)
-        print('p3: %s' % self.p3)
-        print('data: %s' % hx(self.data))
 
         self.cgpa = ParamPartyAddress(self.data[:self.p2 - self.p1 + 1])
         self.cdpa = ParamPartyAddress(self.data[self.p2 - self.p1 + 1:self.p3 - self.p1 + 2])
         self.upper_layers = self.data[self.p3 - 1:]
         self.data = [self.cgpa, self.cdpa, self.upper_layers]
 
-        print('\n==================== CgPA ====================')
-        print('cgpalen: %s' % self.cgpa.len)
-        print('cgpaind: %s' % self.cgpa.indicators)
-        print('cgpassn: %s' % self.cgpa.ssn)
-        # print('cgpagt: %s' % hx(self.cgpa.gt))
-        print('cgpadata: %s' % hx(self.cgpa.data))
-        print('\n==================== CdPA ====================')
-        print('cdpalen: %s' % self.cdpa.len)
-        print('cdpaind: %s' % self.cdpa.indicators)
-        print('cdpassn: %s' % self.cdpa.ssn)
-        # print('cdpagt: %s' % hx(self.cdpa.gt))
-        print('cdpadata: %s' % hx(self.cdpa.data))
-
-        print('\n\ndata: %s' % self.data)
-
     def pack_hdr(self):
         self.data = [bytes(d) for d in self.data]
         self.p3 = sum(map(len, self.data[:2])) + 1
         self.p2 = len(self.data[0]) + 2
         self.p1 = 3
-        print('pointers: %s %s %s' % (self.p1, self.p2, self.p3))
-        print('data: %s' % self.data)
 
         return dpkt.Packet.pack_hdr(self)
 
@@ -237,7 +217,7 @@ class ParamPartyAddress(dpkt.Packet):
 
     @pc_indicator.setter
     def pc_indicator(self, p):
-        pass
+        self.indicators = (self.indicators & ~0x1) | (p & 0x1)
 
     @property
     def ssn_indicator(self):
@@ -252,24 +232,24 @@ class ParamPartyAddress(dpkt.Packet):
         return (self.indicators >> 2) & 0xf
 
     @gt_indicator.setter
-    def gt_indicator(self, p):
-        pass
+    def gt_indicator(self, g):
+        self.indicators = (self.indicators & ~0x3c) | ((g & 0xf) << 2)
 
     @property
     def routing_indicator(self):
-        pass
+        return (self.indicators >> 6) & 0x1
 
     @routing_indicator.setter
-    def routing_indicator(self, p):
-        pass
+    def routing_indicator(self, r):
+        self.indicators = (self.indicators & ~0x40) | ((r & 0x1) << 6)
 
     @property
     def rsv_bit(self):
-        pass
+        return (self.indicators >> 7) & 0x1
 
     @rsv_bit.setter
-    def rsv_bit(self, p):
-        pass
+    def rsv_bit(self, r):
+        self.indicators = (self.indicators & ~0x80) | ((r & 0x1) << 7)
 
     def unpack(self, buf):
         dpkt.Packet.unpack(self, buf)
@@ -320,8 +300,8 @@ class GlobalTitle(dpkt.Packet):
         return (self.flags >> 12) & 0xf
 
     @npi.setter
-    def npi(self, e):
-        pass
+    def npi(self, n):
+        self.flags = (self.flags & ~0xf000) | ((n & 0xf) << 12)
 
     @property
     def es(self):
@@ -329,15 +309,15 @@ class GlobalTitle(dpkt.Packet):
 
     @es.setter
     def es(self, e):
-        pass
+        self.flags = (self.flags & ~0xf00) | ((e & 0xf) << 8)
 
     @property
     def nai(self):
         return self.flags & 0xff
 
     @nai.setter
-    def nai(self, e):
-        pass
+    def nai(self, n):
+        self.flags = (self.flags & ~0xff) | (n & 0xff)
 
     def swap4bits(self, octet):
         return ((octet & 0xf) << 4) ^ ((octet >> 4) & 0xf)
@@ -389,9 +369,6 @@ SCCP_TYPES_DICT = {
 
 '''
 
-__s = b'\x09\x81\xde\xad\xbe\xef'
-__t = b'\x09\x81\x03\xad\xbe\xef'
-
 __payloads = [
     b'\t\x80\x03\r\x17',
     b'\n\x12\x06\x00\x11\x04\x89gE#\x01',
@@ -403,36 +380,33 @@ __sccp = b''.join(__payloads)
 
 
 def test_unpack():
-    print('================ UNPACKING ================')
     s = SCCP(__sccp)
-
     assert s.type == TYPE_UDT
     assert s.cls == 0
-    assert s.msg_handling == 8
+    assert s.msg_handling == MH_RETURN_MSG_ON_ERROR
 
     udt = TypeUnitData(s.data)
     for u in udt.data:
         if isinstance(u, ParamPartyAddress):
-            print('UDT IND: %s' % u.indicators)
-            print('UDT SSN: %s' % u.ssn)
+            assert (u.pc_indicator == 0)
+            assert (u.ssn_indicator == 1)
+            assert (u.gt_indicator == GTI_TT_NPI_ES_NAI)
+            assert (u.routing_indicator == 0)
+            assert (u.rsv_bit == 0)
             if isinstance(u.gt, GlobalTitle):
                 gt = u.gt
-                print('UDT GT TT: %s' % gt.tt)
-                print('UDT GT FL: %s' % gt.flags)
-                print('UDT GT NP: %s' % gt.npi)
-                print('UDT GT ES: %s' % gt.es)
-                print('UDT GT NA: %s' % gt.nai)
-                print('UDT GT DG: %s' % gt.digits)
+                assert (gt.tt == 0)
+                assert (gt.npi == NPI_ISDN_TELEPHONY)
+                assert (gt.es == ES_BCD_ODD)
+                assert (gt.nai == NAI_INTERNATIONAL_NUMBER)
+                assert (gt.digits == b'987654321' or b'123456789')
         else:
-            print('UDT DATA: %s' % hx(u))
+            assert (u == b'\xde\xad\xbe\xef')
 
     assert (bytes(s) == __sccp)
-    # assert (__sccp == 'hoge')
 
 
 def test_pack():
-    print('================ PACKING ================')
-
     s = SCCP(
         type=TYPE_UDT,
         msg_handling=MH_RETURN_MSG_ON_ERROR,
@@ -441,57 +415,36 @@ def test_pack():
 
     params = [
         ParamPartyAddress(
-            indicators=18,
-            ssn=SSN_HLR,
+            pc_indicator=0,
+            ssn_indicator=1,
+            gt_indicator=GTI_TT_NPI_ES_NAI,
+            routing_indicator=0,
+            rsv_bit=0,
+            ssn=6,
             gt=GlobalTitle(
-                flags=4356,
+                npi=NPI_ISDN_TELEPHONY,
+                es=ES_BCD_ODD,
+                nai=NAI_INTERNATIONAL_NUMBER,
                 digits='987654321'
             )
         ),
         ParamPartyAddress(
-            indicators=18,
-            ssn=SSN_MSC,
+            pc_indicator=0,
+            ssn_indicator=1,
+            gt_indicator=GTI_TT_NPI_ES_NAI,
+            routing_indicator=0,
+            rsv_bit=0,
+            ssn=8,
             gt=GlobalTitle(
-                flags=4356,
+                npi=NPI_ISDN_TELEPHONY,
+                es=ES_BCD_ODD,
+                nai=NAI_INTERNATIONAL_NUMBER,
                 digits='123456789'
             )
         ),
         b'\xde\xad\xbe\xef'
     ]
 
-    '''
-    cgpa = ParamPartyAddress(
-        pc_indicator=0,
-        ssn_indicator=1,
-        gt_indicator=TT_NPI_ES_NAI,
-        routing_indicator=0,
-        rsv_bit=0,
-        ssn=6,
-        gt=GlobalTitle(
-            npi=NPI_ISDN_TELEPHONY,
-            es=ES_BCD_ODD,
-            nai=NAI_INTERNATIONAL_NUMBER,
-            digits='987654321'
-            )
-        )
-
-    cdpa = ParamPartyAddress(
-        pc_indicator=0,
-        ssn_indicator=1,
-        gt_indicator=TT_NPI_ES_NAI,
-        routing_indicator=0,
-        rsv_bit=0,
-        ssn=8,
-        gt=GlobalTitle(
-            npi=NPI_ISDN_TELEPHONY,
-            es=ES_BCD_ODD,
-            nai=NAI_INTERNATIONAL_NUMBER,
-            digits='123456789'
-            )
-        )
-    '''
-
     udt = TypeUnitData(data=params)
     s.data = udt
     assert (bytes(s) == __sccp)
-    # assert (__sccp == 'hoge')
