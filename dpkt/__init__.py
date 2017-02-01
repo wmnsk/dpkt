@@ -63,6 +63,7 @@ from . import sctp
 from . import sip
 from . import sll
 from . import smb
+from . import ss7_sccp
 from . import ssl
 from . import stp
 from . import stun
