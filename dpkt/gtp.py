@@ -1,4 +1,3 @@
-# $Id: radius.py 23 2006-11-08 15:45:33Z dugsong $
 # -*- coding: utf-8 -*-
 """General Packet Radio System (GPRS) Tunneling Protocol (GTP)."""
 
@@ -8,6 +7,7 @@ import struct
 
 from . import dpkt
 from .compat import compat_ord
+from binascii import hexlify as hx
 
 # General Packet Radio Service (GPRS); GPRS Tunnelling Protocol (GTP)
 # across the Gn and Gp interface
@@ -39,7 +39,7 @@ V2_DELETE_SESSION_REQ = 36
 V2_DELETE_SESSION_RES = 37
 V2_CHANGE_NOTIFICATION_REQ = 38
 V2_CHANGE_NOTIFICATION_RES = 39
-V2_REMOTE_UE_REPORT_NOTFY = 40
+V2_REMOTE_UE_REPORT_NOTIFY = 40
 V2_REMOTE_UE_REPORT_ACK = 41
 V2_MODIFY_BEARER_CMD = 64
 V2_MODIFY_BEARER_FAIL = 65
@@ -101,7 +101,7 @@ V2_RELEASE_ACCESS_BEARERS_RES = 171
 V2_DL_DATA_NOTIFY = 176
 V2_DL_DATA_NOTIFY_ACK = 177
 V2_PGW_RESTART_NOTIFY = 179
-V2_PGW_RESTART_NOTIFY_ACK = 180
+V2_PGW_RESTART_ACK = 180
 V2_UPDATE_PDN_CONN_SET_REQ = 200
 V2_UPDATE_PDN_CONN_SET_RES = 201
 V2_MODIFY_ACCESS_BEARERS_REQ = 211
@@ -112,6 +112,106 @@ V2_MBMS_SESSION_UPDATE_REQ = 233
 V2_MBMS_SESSION_UPDATE_RES = 234
 V2_MBMS_SESSION_STOP_REQ = 235
 V2_MBMS_SESSION_STOP_RES = 236
+
+
+class GTPv1C(dpkt.Packet):
+    """GTPv1-C Header.
+
+    Attributes:
+        __hdr__  : GTPv2-C header in general format
+                    - flags: Version, Piggyback flag, TEID flag, and spare bits
+                    - type : GTPv2-C Message Type
+                    - len  : length of whole payload
+        teid     : Tunnel Endpoint Identifier
+        seqnum   : Sequence Number
+        ndpu     : N-PDU Number
+        next_type:  Next Extension Header Type
+    """
+    __hdr__ = (
+        ('flags', 'B', 0),
+        ('type', 'B', 0),
+        ('len', 'H', 0),
+        ('teid', 'I', 0),
+    )
+
+    @property
+    def version(self):
+        return (self.flags >> 5) & 0x7
+
+    @version.setter
+    def version(self, v):
+        self.flags = (self.flags & ~0xe0) | ((v & 0x7) << 5)
+
+    @property
+    def proto_type(self):
+        return (self.flags >> 4) & 0x1
+
+    @proto_type.setter
+    def proto_type(self, p):
+        self.flags = (self.flags & ~0x10) | ((p & 0x1) << 4)
+
+    @property
+    def e_flag(self):
+        return (self.flags >> 2) & 0x1
+
+    @e_flag.setter
+    def e_flag(self, e):
+        self.flags = (self.flags & ~0x4) | ((e & 0x1) << 2)
+
+    @property
+    def s_flag(self):
+        return (self.flags >> 1) & 0x1
+
+    @s_flag.setter
+    def s_flag(self, s):
+        self.flags = (self.flags & ~0x2) | ((s & 0x1) << 1)
+
+    @property
+    def np_flag(self):
+        return self.flags & 0x1
+
+    @np_flag.setter
+    def np_flag(self, n):
+        self.flags = (self.flags & ~0x1) | (n & 0x1)
+
+    @property
+    def __additionals(self):
+        return self.flags & 0x7
+
+    def unpack(self, buf):
+        dpkt.Packet.unpack(self, buf)
+
+        if self.__additionals:
+            self.seqnum = (
+                (compat_ord(self.data[0]) << 8) |
+                (compat_ord(self.data[1]))
+            )
+            self.npdu = compat_ord(self.data[2])
+            self.next_type = compat_ord(self.data[3])
+            self.data = self.data[5:]
+
+        l = []
+        while self.data:
+            ie = InfoElement(self.data)
+            l.append(ie)
+            self.data = self.data[len(ie):]
+        self.data = self.ies = l
+
+    def pack_hdr(self):
+        if self.__additionals:
+            self.seqnum = struct.pack('BB',
+                (self.seqnum >> 8) & 0xff,
+                (self.seqnum) & 0xff,
+            )
+            self.npdu = struct.pack('B', self.npdu & 0xff)
+            self.next_type = struct.pack('B', self.next_type & 0xff)
+        else:
+            self.seqnum = self.npdu = self.next_type = b''
+
+        self.data = self.seqnum + self.npdu + self.next_type + b''.join([bytes(d) for d in self.data])
+        self.len = len(self.data)
+
+        return dpkt.Packet.pack_hdr(self)
 
 
 class GTPv2C(dpkt.Packet):
@@ -187,28 +287,23 @@ class GTPv2C(dpkt.Packet):
 
     def pack_hdr(self):
         if self.t_flag:
-            self.teid = struct.pack('BBBB',
-                (int(self.teid) >> 24) & 0xff,
-                (int(self.teid) >> 16) & 0xff,
-                (int(self.teid) >> 8) & 0xff,
-                (int(self.teid)) & 0xff,
-            )
-            self.seqnum = struct.pack('BBB',
-                (int(self.seqnum) >> 16) & 0xff,
-                (int(self.seqnum) >> 8) & 0xff,
-                (int(self.seqnum)) & 0xff,
+            self.teid = struct.pack('4B',
+                (self.teid >> 24) & 0xff,
+                (self.teid >> 16) & 0xff,
+                (self.teid >> 8) & 0xff,
+                (self.teid) & 0xff,
             )
         else:
             self.teid = b''
-            self.seqnum = struct.pack('BBB',
-                (int(self.seqnum) >> 16) & 0xff,
-                (int(self.seqnum) >> 8) & 0xff,
-                (int(self.seqnum)) & 0xff,
-            )
 
+        self.seqnum = struct.pack('3B',
+            (self.seqnum >> 16) & 0xff,
+            (self.seqnum >> 8) & 0xff,
+            (self.seqnum) & 0xff,
+        )
 
         self.data = self.teid + self.seqnum + b'\x00' + b''.join([bytes(d) for d in self.data])
-        self.len = self.__hdr_len__ + len(self.data) - 4
+        self.len = len(self.data)
 
         return dpkt.Packet.pack_hdr(self)
 
@@ -253,17 +348,25 @@ class InfoElement(dpkt.Packet):
         return dpkt.Packet.pack_hdr(self)
 
 
-__payloads = [
+__v1c_payloads = [
+    b'2 \x00%\x00\x00\x00\x10\x00\n\xca\xfe', # Header
+    b'\x01\x00\x08\x00D\x90\x01\x12#4E\xf5', #IMSI
+    b'G\x00\x11\x00some.operator.net' # APN
+]
+
+__v1c = b''.join(__v1c_payloads)
+
+__v2c_payloads = [
     b'H \x00\x29\x00\x00\x00\x10\x01\x00\n\x00', # Header
     b'\x01\x00\x08\x00D\x90\x01\x12#4E\xf5', #IMSI
     b'G\x00\x11\x00some.operator.net' # APN
 ]
 
-__s = b''.join(__payloads)
+__v2c = b''.join(__v2c_payloads)
 
 
 def test_unpack():
-    v2c = GTPv2C(__s)
+    v2c = GTPv2C(__v2c)
     assert (v2c.version == 2)
     assert (v2c.p_flag == 0)
     assert (v2c.t_flag == 1)
@@ -286,8 +389,47 @@ def test_unpack():
     assert (apn.instance == 0)
     assert (apn.data == b'some.operator.net')
 
+    v1c = GTPv1C(__v1c)
+    assert (v1c.version == 1)
+    assert (v1c.proto_type == 1)
+    assert (v1c.e_flag == 0)
+    assert (v1c.s_flag == 1)
+    assert (v1c.np_flag == 0)
+    assert (v1c.type == V2_CREATE_SESSION_REQ)
+    assert (v1c.len == 37)
+    assert (v1c.teid == 0x00000010)
+    assert (v1c.seqnum == 0x0001000a)
+    assert (v1c.npdu == 0xca)
+    assert (v1c.next_type == 0xfe)
+
+    imsi = v1c.ies[0]
+    assert (imsi.type == 1)
+    assert (imsi.len == 8)
+    assert (imsi.cr_flag == 0)
+    assert (imsi.instance == 0)
+    assert (imsi.data == b'D\x90\x01\x12#4E\xf5')
+
+    apn = v1c.ies[1]
+    assert (apn.type == 71)
+    assert (apn.len == 17)
+    assert (apn.cr_flag == 0)
+    assert (apn.instance == 0)
+    assert (apn.data == b'some.operator.net')
 
 def test_pack():
+    v1c = GTPv1C(
+        version=1,
+        proto_type=1,
+        e_flag=0,
+        s_flag=1,
+        np_flag=0,
+        type=V2_CREATE_SESSION_REQ,
+        teid=0x00000010,
+        seqnum=0x0001000a,
+        npdu=0xca,
+        next_type=0xfe
+        )
+
     v2c = GTPv2C(
         version=2,
         p_flag=0,
@@ -312,5 +454,8 @@ def test_pack():
         )
     ]
 
+    v1c.data = infoelems
+    assert (bytes(v1c) == __v1c)
+
     v2c.data = infoelems
-    assert (bytes(v2c) == __s)
+    assert (bytes(v2c) == __v2c)
