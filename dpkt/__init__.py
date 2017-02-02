@@ -26,6 +26,7 @@ from . import dtp
 from . import esp
 from . import ethernet
 from . import gre
+from . import gtp
 from . import gzip
 from . import h225
 from . import hsrp
