@@ -98,10 +98,71 @@ V1_G_PDU = 255
 NO_MORE_EXT_HEADERS = 0
 MBMS_SUPPORT_INDICATION = 1
 MS_INFO_CHANVE_REPORTING_SUPPORT = 2
-# RESERVED FOR GTP-U
 PDCP_PDU_NUMBER = 192
 SUSPEND_REQUEST = 193
 SUSPEND_RESPONSE = 194
+
+# GTPv1 IEs without length
+TV_RESERVED = 0
+TV_CAUSE = 1
+TV_IMSI = 2
+TV_RAI = 3
+TV_TLLI = 4
+TV_P_TMSI = 5
+TV_REORDER_REQUIRED = 8
+TV_AUTH_TRIPLET = 9
+TV_MAP_CAUSE = 11
+TV_P_TMSI_SIGN = 12
+TV_MS_VALIDATED = 13
+TV_RECOVERY = 14
+TV_SELECTION_MODE = 15
+TV_TEID_DATA_1 = 16
+TV_TEID_C_PLANE = 17
+TV_TEID_DATA_2 = 18
+TV_TEARDOWN_IND = 19
+TV_NSAPI = 20
+TV_RANAP_CAUSE = 21
+TV_RAB_CXT = 22
+TV_RADIO_PRIORITY_SMS = 23
+TV_RADIO_PRIORITY = 24
+TV_PACKET_FLOW_ID = 25
+TV_CHARGING_CHARS = 26
+TV_TRACE_REFERENCE = 27
+TV_TRACE_TYPE = 28
+TV_MS_NOT_REACHABLE_REASON = 29
+TV_CHARGING_ID = 127
+
+TV_LEN_DICT = {
+    TV_RESERVED: 0,
+    TV_CAUSE: 1,
+    TV_IMSI: 8,
+    TV_RAI: 6,
+    TV_TLLI: 4,
+    TV_P_TMSI: 4,
+    TV_REORDER_REQUIRED: 1,
+    TV_AUTH_TRIPLET: 28,
+    TV_MAP_CAUSE: 1,
+    TV_P_TMSI_SIGN: 3,
+    TV_MS_VALIDATED: 1,
+    TV_RECOVERY: 1,
+    TV_SELECTION_MODE: 1,
+    TV_TEID_DATA_1: 4,
+    TV_TEID_C_PLANE: 4,
+    TV_TEID_DATA_2: 5,
+    TV_TEARDOWN_IND: 1,
+    TV_NSAPI: 1,
+    TV_RANAP_CAUSE: 1,
+    TV_RAB_CXT: 9,
+    TV_RADIO_PRIORITY_SMS: 1,
+    TV_RADIO_PRIORITY: 1,
+    TV_PACKET_FLOW_ID: 2,
+    TV_CHARGING_CHARS: 2,
+    TV_TRACE_REFERENCE: 2,
+    TV_TRACE_TYPE: 2,
+    TV_MS_NOT_REACHABLE_REASON: 1,
+    TV_CHARGING_ID: 4
+}
+
 
 # GTPv2 Message Types
 V2_RESERVED = 0
@@ -269,7 +330,7 @@ class GTPv1C(dpkt.Packet):
 
         l = []
         while self.data:
-            ie = IEv2(self.data)
+            ie = IEv1(self.data)
             l.append(ie)
             self.data = self.data[len(ie):]
         self.data = self.ies = l
@@ -412,8 +473,8 @@ class IEv1(dpkt.Packet):
 
     def unpack(self, buf):
         dpkt.Packet.unpack(self, buf)
-        if self.encoding:
-            self.len = len(self.data)
+        self.len = TV_LEN_DICT.get(self.type, len(self.data))
+        self.data = self.data[:self.len]
 
     def pack_hdr(self):
         data = dpkt.Packet.pack_hdr(self)
